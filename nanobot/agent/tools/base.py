@@ -1,6 +1,7 @@
 """Base class for agent tools."""
 from __future__ import annotations
 
+import json
 import math
 import typing
 from abc import ABC, abstractmethod
@@ -195,6 +196,62 @@ class Tool(ABC):
         """Pick first non-null type from JSON Schema unions like ``['string','null']``."""
         return Schema.resolve_json_schema_type(t)
 
+    @staticmethod
+    def _structured_json_targets(schema: dict[str, Any]) -> frozenset[str]:
+        """Object or array types a JSON string may be decoded into.
+
+        Empty when the value may already be a string, the schema is open, or no
+        container type is expected. Real objects and arrays are left untouched.
+        """
+        for key in ("oneOf", "anyOf", "allOf"):
+            branches = schema.get(key)
+            if not isinstance(branches, list) or not branches:
+                continue
+            targets: set[str] = set()
+            for branch_item in cast(list[Any], branches):
+                if not isinstance(branch_item, dict):
+                    return frozenset()
+                branch = cast(dict[str, Any], branch_item)
+                branch_type: Any = branch.get("type")
+                if branch_type in ("null", ["null"]):
+                    continue
+                branch_targets = Tool._structured_json_targets(branch)
+                if not branch_targets:
+                    return frozenset()
+                targets.update(branch_targets)
+            return frozenset(targets)
+
+        raw_type = schema.get("type")
+        if isinstance(raw_type, str):
+            types: tuple[Any, ...] = () if raw_type == "null" else (raw_type,)
+        elif isinstance(raw_type, list):
+            types = tuple(item for item in cast(list[Any], raw_type) if item != "null")
+        else:
+            return frozenset()
+        if not types or "string" in types:
+            return frozenset()
+        return frozenset(
+            item for item in types if isinstance(item, str) and item in ("object", "array")
+        )
+
+    def _decode_structured_json(self, val: str, schema: dict[str, Any]) -> Any:
+        """Parse a JSON object/array string when the schema expects that container."""
+        targets = self._structured_json_targets(schema)
+        if not targets:
+            return val
+        stripped = val.strip()
+        if not stripped.startswith(("{", "[")):
+            return val
+        try:
+            parsed: object = json.loads(stripped)
+        except Exception:
+            return val
+        if isinstance(parsed, dict) and "object" in targets:
+            return cast(dict[str, Any], parsed)
+        if isinstance(parsed, list) and "array" in targets:
+            return cast(list[Any], parsed)
+        return val
+
     @property
     @abstractmethod
     def name(self) -> str:
@@ -285,6 +342,8 @@ class Tool(ABC):
     def _cast_value(self, val: Any, schema: dict[str, Any] | bool) -> Any:
         if isinstance(schema, bool):
             return val
+        if isinstance(val, str):
+            val = self._decode_structured_json(val, schema)
         raw_type = schema.get("type")
         t = self._resolve_type(raw_type)
         if isinstance(raw_type, list):

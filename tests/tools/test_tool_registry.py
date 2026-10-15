@@ -134,6 +134,97 @@ def test_prepare_call_parses_json_string_arguments() -> None:
     assert error is None
 
 
+_NESTED_OBJECT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "format": {"type": "string"},
+        "target": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string"},
+                        "path": {"type": "string"},
+                    },
+                    "required": ["type", "path"],
+                },
+                {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string"},
+                        "file": {"type": "string"},
+                    },
+                    "required": ["type", "file"],
+                },
+            ]
+        },
+    },
+    "required": ["target"],
+}
+
+
+async def test_execute_decodes_json_string_nested_object_arguments() -> None:
+    """JSON-text nested objects must be objects before validation and dispatch.
+
+    Some providers emit a schema object as a JSON string. Flat string parameters
+    and values that are already objects stay unchanged.
+    """
+    registry = ToolRegistry()
+    registry.register(_FakeTool("mcp_obsidian_obsidian_get_note", _NESTED_OBJECT_SCHEMA))
+    encoded_target = '{"type": "path", "path": "Projects/nanobot.md"}'
+
+    decoded = await registry.execute(
+        "mcp_obsidian_obsidian_get_note",
+        {"format": "content", "target": encoded_target},
+    )
+    already_object = await registry.execute(
+        "mcp_obsidian_obsidian_get_note",
+        {"format": "content", "target": {"type": "path", "path": "Projects/nanobot.md"}},
+    )
+
+    assert decoded == {
+        "format": "content",
+        "target": {"type": "path", "path": "Projects/nanobot.md"},
+    }
+    assert already_object == decoded
+
+
+async def test_execute_decodes_json_string_object_and_array_but_not_string_params() -> None:
+    registry = ToolRegistry()
+    registry.register(_FakeTool(
+        "sample",
+        {
+            "type": "object",
+            "properties": {
+                "config": {
+                    "type": "object",
+                    "properties": {
+                        "port": {"type": "integer"},
+                        "debug": {"type": "boolean"},
+                    },
+                },
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "note": {"type": "string"},
+            },
+        },
+    ))
+
+    result = await registry.execute(
+        "sample",
+        {
+            "config": '{"port": "8080", "debug": "true"}',
+            "tags": '["a", "b"]',
+            "note": '{"keep": "text"}',
+        },
+    )
+
+    assert result == {
+        "config": {"port": 8080, "debug": True},
+        "tags": ["a", "b"],
+        "note": '{"keep": "text"}',
+    }
+
+
 def test_prepare_call_rejects_malformed_json_string_arguments() -> None:
     registry = ToolRegistry()
     registry.register(_FakeTool("read_file"))
