@@ -1,5 +1,3 @@
-"""xAI subscription provider with capability-gated hosted X Search."""
-
 from __future__ import annotations
 
 import asyncio
@@ -21,7 +19,7 @@ from nanobot.providers.base import (
     LLMUsage,
     ToolCallRequest,
 )
-from nanobot.providers.oauth_model_catalog import (
+from nanobot.providers.oauth_catalog_cache import (
     OAuthCatalogAuthRequiredError,
     OAuthModelCatalog,
     OAuthModelCatalogSnapshot,

@@ -1,5 +1,3 @@
-"""An owned OpenSSH master, never a user's shared control socket."""
-
 from __future__ import annotations
 
 import asyncio
@@ -21,7 +19,7 @@ class SSHMaster:
         self._lock = asyncio.Lock()
 
     async def arguments(self, channel: list[str]) -> list[str]:
-        from nanobot.webui.remote_ssh import RemoteError, ssh_error
+        from nanobot.webui.ssh_process import RemoteError, ssh_error
 
         async with self._lock:
             if self._process is None or self._process.returncode is not None:
@@ -76,7 +74,7 @@ class SSHMaster:
             return [channel[0], "-S", str(Path(self._directory.name) / "s"), *channel[1:]]
 
     async def close(self) -> None:
-        from nanobot.webui.remote_ssh import stop_process
+        from nanobot.webui.ssh_process import stop_process
 
         if self._process is not None:
             await stop_process(self._process)

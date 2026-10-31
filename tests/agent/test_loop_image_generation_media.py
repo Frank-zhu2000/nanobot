@@ -7,10 +7,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from nanobot.agent.loop import AgentLoop
+from nanobot.agent.tools.image_generation import register_image_generation_tool
+from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.bus.events import InboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.config.loader import set_config_path
-from nanobot.config.schema import ImageGenerationToolConfig, ProviderConfig, ToolsConfig
+from nanobot.config.schema import Config
 from nanobot.providers.base import LLMResponse, ToolCallRequest
 from nanobot.providers.image_generation import GeneratedImageResponse
 
@@ -33,7 +35,6 @@ async def test_generate_image_does_not_attach_media_to_final_response(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Generating an image does not attach it to the final outbound response."""
     set_config_path(tmp_path / "config.json")
     monkeypatch.setattr(
         "nanobot.agent.tools.image_generation.get_image_gen_provider",
@@ -58,15 +59,18 @@ async def test_generate_image_does_not_attach_media_to_final_response(
             LLMResponse(content="Done", finish_reason="stop"),
         ]
     )
+    config = Config()
+    config.tools.image_generation.enabled = True
+    config.providers.openrouter.api_key = "sk-or-test"
+    tools = ToolRegistry()
+    register_image_generation_tool(config, tools, workspace=tmp_path)
     loop = AgentLoop(
         bus=MessageBus(),
         provider=provider,
         workspace=tmp_path,
         model="test-model",
-        tools_config=ToolsConfig(
-            image_generation=ImageGenerationToolConfig(enabled=True),
-        ),
-        image_generation_provider_config=ProviderConfig(api_key="sk-or-test"),
+        tools_config=config.tools,
+        tool_registry=tools,
     )
 
     result = await loop._process_message(
@@ -80,5 +84,4 @@ async def test_generate_image_does_not_attach_media_to_final_response(
 
     assert result is not None
     assert result.content == "Done"
-    # Image delivery requires a separate message tool call.
     assert result.media == []

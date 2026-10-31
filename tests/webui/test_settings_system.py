@@ -13,10 +13,26 @@ from nanobot.config.loader import load_config, save_config
 from nanobot.config.schema import Config
 from nanobot.webui.settings_system import (
     coerce_channel_value,
+    pairing_payload,
     save_channel_config_values,
     system_settings_payload,
     update_agent_system_settings,
 )
+
+
+@pytest.mark.parametrize("status", [None, "sending", "sent", "failed", "unknown", []])
+def test_pairing_payload_preserves_optional_delivery_state(status):
+    item = {"code": "ABCD-EFGH", "channel": "feishu", "sender_id": "alice",
+            "created_at": 1000, "expires_at": 1600}
+    if status is not None:
+        item["delivery_status"] = status
+    [request] = pairing_payload(lambda: [item], now=1100)["requests"]
+    assert request["code"] == "ABCD-EFGH"
+    assert request["expires_in_seconds"] == 500
+    if isinstance(status, str) and status in {"sending", "sent", "failed"}:
+        assert request["delivery_status"] == status
+    else:
+        assert "delivery_status" not in request
 
 
 def test_system_domain_owns_runtime_dto_and_agent_updates(tmp_path, monkeypatch) -> None:
@@ -99,7 +115,6 @@ def test_compaction_notice_webui_contract_and_config_round_trip(existing_key, tm
     })
     key = f"channels.{name}.showCompactionNotices"
     manager = ChannelManager.__new__(ChannelManager)
-    # The generic settings route must preserve false, true and a return to inheritance.
     for submitted, expected in [("false", False), ("true", True), ("", None), (None, None)]:
         save_channel_config_values(
             config, name, {key: submitted}, load_channel_plugin=load_channel_plugin,
@@ -113,7 +128,6 @@ def test_compaction_notice_webui_contract_and_config_round_trip(existing_key, tm
         assert instance.config.get("showCompactionNotices") is expected
         assert "show_compaction_notices" not in instance.config
         if expected is None:
-            # Inheritance is persisted as absence, also readable by older QQ versions.
             assert "showCompactionNotices" not in instance.config
         assert manager._resolve_bool_override(
             instance.config, "show_compaction_notices", True,

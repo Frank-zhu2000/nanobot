@@ -1,5 +1,3 @@
-"""GitHub Copilot OAuth-backed provider."""
-
 # pyright: reportMissingTypeStubs=false
 
 from __future__ import annotations
@@ -20,7 +18,7 @@ from oauth_cli_kit.storage import FileTokenStorage
 
 from nanobot.providers.base import LLMResponse, ProviderCallContext
 from nanobot.providers.model_api import ModelAPICapabilities, RequestAPI
-from nanobot.providers.oauth_model_catalog import (
+from nanobot.providers.oauth_catalog_cache import (
     OAuthCatalogAuthRequiredError,
     OAuthModelCatalog,
     OAuthModelCatalogSnapshot,
@@ -45,7 +43,6 @@ _LONG_LIVED_TOKEN_SECONDS = 315360000
 
 
 def _resolve(env_var: str, default: str) -> str:
-    """Allow GitHub Enterprise / Copilot for Business deployments to override defaults via env."""
     value = os.environ.get(env_var)
     return value.strip() if value and value.strip() else default
 
